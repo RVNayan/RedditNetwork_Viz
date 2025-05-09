@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Subreddit Graph Viewer</title>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://unpkg.com/cytoscape@3.21.1/dist/cytoscape.min.js"></script>
+  <style>
+    #cy { width: 100%; height: 600px; border: 1px solid #ccc; margin-top: 20px; }
+    input, button, datalist { margin: 5px; padding: 5px; }
+  </style>
+</head>
+<body>
+
+  <h3>Subreddit Graph Explorer</h3>
+  <input id="subInput" list="subList" placeholder="Enter subreddit name" />
+  <datalist id="subList"></datalist>
+  <input id="depthInput" placeholder="Depth k (e.g., 2)" type="number" min="1" />
+  <input id="topKInput" placeholder="Top N edges (e.g., 10)" type="number" min="1" />
+  <button onclick="initGraph()">Generate Graph</button>
+
+  <div id="cy"></div>
+
+  <script>
+    let allEdges = [];
+    let adjList = {};
+    let allSubreddits = new Set();
+
+    // Load and preprocess CSV
+    Papa.parse("/data/JCSimilarity_Jaccard_cleaned.csv", {
+      download: true,
+      header: true,
+      complete: function(results) {
+        for (const row of results.data) {
+          if (!row.Source || !row.Target || !row.Weight) continue;
+
+          const src = row.Source.trim();
+          const tgt = row.Target.trim();
+          const weight = parseFloat(row.Weight);
+
+          if (!adjList[src]) adjList[src] = [];
+          if (!adjList[tgt]) adjList[tgt] = [];
+
+          adjList[src].push({ node: tgt, weight });
+          adjList[tgt].push({ node: src, weight });
+
+          allSubreddits.add(src);
+          allSubreddits.add(tgt);
+        }
+
+        populateDatalist();
+      }
+    });
+
+    function populateDatalist() {
+      const list = document.getElementById("subList");
+      allSubreddits.forEach(sub => {
+        const option = document.createElement("option");
+        option.value = sub;
+        list.appendChild(option);
+      });
+    }
+
+    function initGraph() {
+      const start = document.getElementById("subInput").value.trim();
+      const maxDepth = parseInt(document.getElementById("depthInput").value) || 1;
+      const topK = parseInt(document.getElementById("topKInput").value) || 10;
+
+      if (!adjList[start]) {
+        alert("Subreddit not found.");
+        return;
+      }
+
+      let visited = new Set([start]);
+      let queue = [{ node: start, depth: 0 }];
+      let elements = [{ data: { id: start, label: start } }];
+      let addedEdges = new Set();
+
+      while (queue.length > 0) {
+        const { node, depth } = queue.shift();
+        if (depth >= maxDepth) continue;
+
+        const neighbors = (adjList[node] || [])
+          .sort((a, b) => b.weight - a.weight)
+          .slice(0, topK);
+
+        for (const neighbor of neighbors) {
+          const target = neighbor.node;
+          const weight = neighbor.weight;
+
+          const edgeId = `${node}__${target}`;
+          const reverseEdgeId = `${target}__${node}`;
+          if (!addedEdges.has(edgeId) && !addedEdges.has(reverseEdgeId)) {
+            elements.push({
+              data: {
+                id: edgeId,
+                source: node,
+                target: target,
+                weight: weight
+              }
+            });
+            addedEdges.add(edgeId);
+          }
+
+          if (!visited.has(target)) {
+            visited.add(target);
+            queue.push({ node: target, depth: depth + 1 });
+            elements.push({ data: { id: target, label: target } });
+          }
+        }
+      }
+
+      drawGraph(elements);
+    }
+
+    function drawGraph(elements) {
+  const degreeMap = {};
+
+  // First pass: calculate node degrees
+  elements.forEach(el => {
+    if (el.data.source && el.data.target) {
+      degreeMap[el.data.source] = (degreeMap[el.data.source] || 0) + 1;
+      degreeMap[el.data.target] = (degreeMap[el.data.target] || 0) + 1;
+    }
+  });
+
+  // Normalize degree for color scaling
+  const degrees = Object.values(degreeMap);
+  const maxDeg = Math.max(...degrees);
+  const minDeg = Math.min(...degrees);
+
+  // Generate color from blue to red
+  function getColor(deg) {
+    const ratio = (deg - minDeg) / (maxDeg - minDeg || 1);
+    const r = Math.round(255 * ratio);
+    const b = Math.round(255 * (1 - ratio));
+    return `rgb(${r}, 80, ${b})`;
+  }
+
+  // Assign color to each node
+  elements.forEach(el => {
+    if (el.data.label) {
+      const deg = degreeMap[el.data.id] || 0;
+      el.style = { 'background-color': getColor(deg) };
+    }
+  });
+
+  cytoscape({
+    container: document.getElementById("cy"),
+    elements: elements,
+    layout: { name: 'cose' },
+    style: [
+      {
+        selector: 'node',
+        style: {
+          label: 'data(label)',
+          shape: 'rectangle',
+          'font-size': '7px',
+          'width': 'label',
+          'height': 'label',
+          'padding': '4px',
+          'color': '#fff',
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'text-wrap': 'wrap',
+          'background-color': 'data(bgColor)' // this line is now controlled via element style
+        }
+      },
+      {
+        selector: 'edge',
+        style: {
+          width: 1,
+          'line-color': '#aaa',
+          'curve-style': 'bezier'
+        }
+      }
+    ]
+  });
+}
+  </script>
+</body>
+</html>
