@@ -7,16 +7,34 @@
   <style>
     #cy { width: 100%; height: 600px; border: 1px solid #ccc; margin-top: 20px; }
     input, button, datalist { margin: 5px; padding: 5px; }
+    #loading {
+      padding: 10px;
+      background: #f5f5f5;
+      border-radius: 4px;
+      margin: 10px 0;
+      display: none;
+    }
+    .progress-bar {
+      height: 5px;
+      background: #4CAF50;
+      width: 0%;
+      transition: width 0.3s;
+    }
   </style>
 </head>
 <body>
 
   <h3>Subreddit Graph Explorer</h3>
-  <input id="subInput" list="subList" placeholder="Enter subreddit name" />
+  <div id="loading">
+    <div>Loading dataset... <span id="progress-text">0%</span></div>
+    <div class="progress-bar" id="progress-bar"></div>
+  </div>
+  
+  <input id="subInput" list="subList" placeholder="Enter subreddit name" disabled />
   <datalist id="subList"></datalist>
-  <input id="depthInput" placeholder="Depth k (e.g., 2)" type="number" min="1" />
-  <input id="topKInput" placeholder="Top N edges (e.g., 10)" type="number" min="1" />
-  <button onclick="initGraph()">Generate Graph</button>
+  <input id="depthInput" placeholder="Depth k (e.g., 2)" type="number" min="1" disabled />
+  <input id="topKInput" placeholder="Top N edges (e.g., 10)" type="number" min="1" disabled />
+  <button onclick="initGraph()" disabled id="generateBtn">Generate Graph</button>
 
   <div id="cy"></div>
 
@@ -24,36 +42,77 @@
     let allEdges = [];
     let adjList = {};
     let allSubreddits = new Set();
+    let isDataLoaded = false;
 
-    // Load and preprocess CSV
-    Papa.parse("/data/JCSimilarity_Jaccard_cleaned.csv", {
-      download: true,
-      header: true,
-      complete: function(results) {
-        for (const row of results.data) {
-          if (!row.Source || !row.Target || !row.Weight) continue;
+    // Show loading UI
+    const loadingDiv = document.getElementById('loading');
+    const progressBar = document.getElementById('progress-bar');
+    const progressText = document.getElementById('progress-text');
+    loadingDiv.style.display = 'block';
 
-          const src = row.Source.trim();
-          const tgt = row.Target.trim();
-          const weight = parseFloat(row.Weight);
+    // Stream CSV from GitHub LFS
+    function streamCSV() {
+      const csvUrl = "https://media.githubusercontent.com/media/RVNayan/RedditNetwork_Viz/refs/heads/main/data/JCSimilarity_Jaccard_cleaned.csv";
+      let processedRows = 0;
+      const estimatedTotalRows = 30000000; // Approximate for progress calculation
 
-          if (!adjList[src]) adjList[src] = [];
-          if (!adjList[tgt]) adjList[tgt] = [];
+      Papa.parse(csvUrl, {
+        download: true,
+        header: true,
+        chunk: function(results, parser) {
+          // Process chunk of data
+          for (const row of results.data) {
+            if (!row.Source || !row.Target || !row.Weight) continue;
 
-          adjList[src].push({ node: tgt, weight });
-          adjList[tgt].push({ node: src, weight });
+            const src = row.Source.trim();
+            const tgt = row.Target.trim();
+            const weight = parseFloat(row.Weight);
 
-          allSubreddits.add(src);
-          allSubreddits.add(tgt);
+            if (!adjList[src]) adjList[src] = [];
+            if (!adjList[tgt]) adjList[tgt] = [];
+
+            adjList[src].push({ node: tgt, weight });
+            adjList[tgt].push({ node: src, weight });
+
+            allSubreddits.add(src);
+            allSubreddits.add(tgt);
+            processedRows++;
+          }
+
+          // Update progress
+          const progress = Math.min(100, Math.round((processedRows / estimatedTotalRows) * 100));
+          progressBar.style.width = `${progress}%`;
+          progressText.textContent = `${progress}%`;
+
+          // Early exit if we've processed enough (for testing)
+          // if (processedRows > 100000) parser.abort();
+        },
+        complete: function() {
+          loadingDiv.style.display = 'none';
+          isDataLoaded = true;
+          populateDatalist();
+          enableUI();
+          console.log("Dataset loaded with", allSubreddits.size, "subreddits");
+        },
+        error: function(err) {
+          loadingDiv.innerHTML = `<p style="color:red">Error loading data: ${err.message}</p>`;
+          console.error("CSV loading error:", err);
         }
+      });
+    }
 
-        populateDatalist();
-      }
-    });
+    function enableUI() {
+      document.getElementById("subInput").disabled = false;
+      document.getElementById("depthInput").disabled = false;
+      document.getElementById("topKInput").disabled = false;
+      document.getElementById("generateBtn").disabled = false;
+    }
 
     function populateDatalist() {
       const list = document.getElementById("subList");
-      allSubreddits.forEach(sub => {
+      // Only show first 1000 for performance
+      const subs = Array.from(allSubreddits).slice(0, 1000); 
+      subs.forEach(sub => {
         const option = document.createElement("option");
         option.value = sub;
         list.appendChild(option);
@@ -61,12 +120,17 @@
     }
 
     function initGraph() {
+      if (!isDataLoaded) {
+        alert("Data is still loading. Please wait...");
+        return;
+      }
+
       const start = document.getElementById("subInput").value.trim();
       const maxDepth = parseInt(document.getElementById("depthInput").value) || 1;
       const topK = parseInt(document.getElementById("topKInput").value) || 10;
 
       if (!adjList[start]) {
-        alert("Subreddit not found.");
+        alert(`Subreddit "${start}" not found. Try another one.`);
         return;
       }
 
@@ -113,69 +177,73 @@
     }
 
     function drawGraph(elements) {
-  const degreeMap = {};
+      const degreeMap = {};
 
-  // First pass: calculate node degrees
-  elements.forEach(el => {
-    if (el.data.source && el.data.target) {
-      degreeMap[el.data.source] = (degreeMap[el.data.source] || 0) + 1;
-      degreeMap[el.data.target] = (degreeMap[el.data.target] || 0) + 1;
-    }
-  });
-
-  // Normalize degree for color scaling
-  const degrees = Object.values(degreeMap);
-  const maxDeg = Math.max(...degrees);
-  const minDeg = Math.min(...degrees);
-
-  // Generate color from blue to red
-  function getColor(deg) {
-    const ratio = (deg - minDeg) / (maxDeg - minDeg || 1);
-    const r = Math.round(255 * ratio);
-    const b = Math.round(255 * (1 - ratio));
-    return `rgb(${r}, 80, ${b})`;
-  }
-
-  // Assign color to each node
-  elements.forEach(el => {
-    if (el.data.label) {
-      const deg = degreeMap[el.data.id] || 0;
-      el.style = { 'background-color': getColor(deg) };
-    }
-  });
-
-  cytoscape({
-    container: document.getElementById("cy"),
-    elements: elements,
-    layout: { name: 'cose' },
-    style: [
-      {
-        selector: 'node',
-        style: {
-          label: 'data(label)',
-          shape: 'rectangle',
-          'font-size': '7px',
-          'width': 'label',
-          'height': 'label',
-          'padding': '4px',
-          'color': '#fff',
-          'text-valign': 'center',
-          'text-halign': 'center',
-          'text-wrap': 'wrap',
-          'background-color': 'data(bgColor)' // this line is now controlled via element style
+      elements.forEach(el => {
+        if (el.data.source && el.data.target) {
+          degreeMap[el.data.source] = (degreeMap[el.data.source] || 0) + 1;
+          degreeMap[el.data.target] = (degreeMap[el.data.target] || 0) + 1;
         }
-      },
-      {
-        selector: 'edge',
-        style: {
-          width: 1,
-          'line-color': '#aaa',
-          'curve-style': 'bezier'
-        }
+      });
+
+      const degrees = Object.values(degreeMap);
+      const maxDeg = Math.max(...degrees);
+      const minDeg = Math.min(...degrees);
+
+      function getColor(deg) {
+        const ratio = (deg - minDeg) / (maxDeg - minDeg || 1);
+        const r = Math.round(255 * ratio);
+        const b = Math.round(255 * (1 - ratio));
+        return `rgb(${r}, 80, ${b})`;
       }
-    ]
-  });
-}
+
+      elements.forEach(el => {
+        if (el.data.label) {
+          const deg = degreeMap[el.data.id] || 0;
+          el.data.bgColor = getColor(deg);
+        }
+      });
+
+      cytoscape({
+        container: document.getElementById("cy"),
+        elements: elements,
+        layout: { 
+          name: 'cose',
+          idealEdgeLength: 100,
+          nodeOverlap: 20,
+          refresh: 20
+        },
+        style: [
+          {
+            selector: 'node',
+            style: {
+              label: 'data(label)',
+              shape: 'rectangle',
+              'font-size': '7px',
+              'width': 'label',
+              'height': 'label',
+              'padding': '4px',
+              'color': '#fff',
+              'text-valign': 'center',
+              'text-halign': 'center',
+              'text-wrap': 'wrap',
+              'background-color': 'data(bgColor)'
+            }
+          },
+          {
+            selector: 'edge',
+            style: {
+              width: 1,
+              'line-color': '#aaa',
+              'curve-style': 'bezier'
+            }
+          }
+        ]
+      });
+    }
+
+    // Start loading the data
+    streamCSV();
   </script>
 </body>
 </html>
