@@ -1,66 +1,249 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Subreddit Graph Viewer</title>
+  <title>Subreddit Network Graph</title>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://unpkg.com/cytoscape@3.21.1/dist/cytoscape.min.js"></script>
   <style>
-    #cy { width: 100%; height: 600px; border: 1px solid #ccc; margin-top: 20px; }
-    input, button, datalist { margin: 5px; padding: 5px; }
-    #loading {
-      padding: 10px;
-      background: #f5f5f5;
-      border-radius: 4px;
-      margin: 10px 0;
-      display: none;
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+      color: #333;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
     }
+    
+    #sidebar {
+      width: 300px;
+      background: #f8f9fa;
+      border-right: 1px solid #e0e0e0;
+      height: 100%;
+      overflow-y: auto;
+      transition: all 0.3s;
+      box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+    }
+    
+    #sidebar.collapsed {
+      width: 50px;
+    }
+    
+    #sidebar-toggle {
+      background:  #6c5ce7;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      padding: 10px;
+      width: 100%;
+      text-align: left;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    
+    #sidebar-content {
+      padding: 20px;
+    }
+    
+    #main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    
+    #cy {
+      flex: 1;
+      width: 100%;
+      border: none;
+    }
+    
+    h3 {
+      color: #2c3e50;
+      margin-bottom: 20px;
+    }
+    
+    .controls {
+      margin-bottom: 20px;
+    }
+    
+    .input-group {
+      margin-bottom: 15px;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+    }
+    
+    input, button {
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+      width: 100%;
+      box-sizing: border-box;
+      background: white;
+    }
+    
+    input {
+      /* Disable browser autocomplete */
+      autocomplete: "off";
+      autocorrect: "off";
+      autocapitalize: "off";
+      spellcheck: "false";
+    }
+    
+    button {
+      background-color: #6c5ce7;
+      color: white;
+      border: none;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      margin-top: 10px;
+    }
+    
+    button:hover {
+      background-color: #5649c0;
+    }
+    
+    button:disabled {
+      background-color: #b2b2b2;
+      cursor: not-allowed;
+    }
+    
+    #loading {
+      padding: 15px;
+      background: #f1f8fe;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    
+    .progress-container {
+      width: 100%;
+      background: #e0e0e0;
+      border-radius: 4px;
+      margin-top: 10px;
+    }
+    
     .progress-bar {
-      height: 5px;
-      background: #4CAF50;
+      height: 8px;
+      background: linear-gradient(90deg, #6c5ce7, #a29bfe);
       width: 0%;
+      border-radius: 4px;
       transition: width 0.3s;
+    }
+    
+    .suggestions {
+      position: absolute;
+      background: white;
+      border: 1px solid #ddd;
+      max-height: 200px;
+      overflow-y: auto;
+      z-index: 100;
+      width: calc(100% - 24px);
+      border-radius: 0 0 4px 4px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    
+    .suggestion-item {
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+    
+    .suggestion-item:hover {
+      background: #f5f5f5;
+    }
+    
+    .collapsed .sidebar-text {
+      display: none;
+      background-color: #666;
+    }
+    
+    .collapsed .input-group {
+      display: none;
     }
   </style>
 </head>
 <body>
 
-  <h3>Subreddit Graph Explorer</h3>
-  <div id="loading">
-    <div>Loading dataset... <span id="progress-text">0%</span></div>
-    <div class="progress-bar" id="progress-bar"></div>
+  <div id="sidebar">
+    <button id="sidebar-toggle">
+      <span class="sidebar-text">☰ Menu</span>
+      <span style="display: none;">☰</span>
+    </button>
+    <div id="sidebar-content">
+      <h3 class="sidebar-text">Subreddit Network Explorer</h3>
+      
+      <div id="loading">
+        <div class="sidebar-text">Loading dataset... <span id="progress-text">0%</span></div>
+        <div class="progress-container">
+          <div class="progress-bar" id="progress-bar"></div>
+        </div>
+        <p class="sidebar-text" style="margin-top: 10px; color: #666; font-size: 14px;">
+          Processing large dataset - this may take a minute
+        </p>
+      </div>
+      
+      <div class="input-group">
+        <label for="subInput" class="sidebar-text">Search Subreddit</label>
+        <input type="text" id="subInput" placeholder="Start typing a subreddit name" disabled 
+               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+        <div id="subList"></div>
+        <div id="suggestions" class="suggestions"></div>
+      </div>
+      
+      <div class="input-group">
+        <label for="depthInput" class="sidebar-text">Exploration Depth</label>
+        <input id="depthInput" type="number" min="1" value="1" disabled />
+      </div>
+      
+      <div class="input-group">
+        <label for="topKInput" class="sidebar-text">Max Connections per Node</label>
+        <input id="topKInput" type="number" min="1" value="10" disabled />
+      </div>
+      
+      <button onclick="initGraph()" disabled id="generateBtn" class="sidebar-text">Generate Network</button>
+    </div>
   </div>
-  
-  <input id="subInput" list="subList" placeholder="Enter subreddit name" disabled />
-  <datalist id="subList"></datalist>
-  <input id="depthInput" placeholder="Depth k (e.g., 2)" type="number" min="1" disabled />
-  <input id="topKInput" placeholder="Top N edges (e.g., 10)" type="number" min="1" disabled />
-  <button onclick="initGraph()" disabled id="generateBtn">Generate Graph</button>
 
-  <div id="cy"></div>
+  <div id="main-content">
+    <div id="cy"></div>
+  </div>
 
   <script>
-    let allEdges = [];
     let adjList = {};
     let allSubreddits = new Set();
     let isDataLoaded = false;
+    let startNode = null;
 
-    // Show loading UI
+    // UI Elements
     const loadingDiv = document.getElementById('loading');
     const progressBar = document.getElementById('progress-bar');
     const progressText = document.getElementById('progress-text');
+    const subInput = document.getElementById('subInput');
+    const suggestionsDiv = document.getElementById('suggestions');
+    const sidebar = document.getElementById('sidebar');
+    const sidebarToggle = document.getElementById('sidebar-toggle');
+
+    // Toggle sidebar
+    sidebarToggle.addEventListener('click', function() {
+      sidebar.classList.toggle('collapsed');
+    });
+
+    // Show loading UI
     loadingDiv.style.display = 'block';
 
     // Stream CSV from GitHub LFS
     function streamCSV() {
       const csvUrl = "https://media.githubusercontent.com/media/RVNayan/RedditNetwork_Viz/refs/heads/main/data/JCSimilarity_Jaccard_cleaned.csv";
       let processedRows = 0;
-      const estimatedTotalRows = 30000000; // Approximate for progress calculation
+      const estimatedTotalRows = 30000000;
 
       Papa.parse(csvUrl, {
         download: true,
         header: true,
         chunk: function(results, parser) {
-          // Process chunk of data
           for (const row of results.data) {
             if (!row.Source || !row.Target || !row.Weight) continue;
 
@@ -83,16 +266,15 @@
           const progress = Math.min(100, Math.round((processedRows / estimatedTotalRows) * 100));
           progressBar.style.width = `${progress}%`;
           progressText.textContent = `${progress}%`;
-
-          // Early exit if we've processed enough (for testing)
-          // if (processedRows > 100000) parser.abort();
         },
         complete: function() {
           loadingDiv.style.display = 'none';
           isDataLoaded = true;
-          populateDatalist();
           enableUI();
           console.log("Dataset loaded with", allSubreddits.size, "subreddits");
+          
+          // Setup search functionality
+          setupSearch();
         },
         error: function(err) {
           loadingDiv.innerHTML = `<p style="color:red">Error loading data: ${err.message}</p>`;
@@ -102,20 +284,55 @@
     }
 
     function enableUI() {
-      document.getElementById("subInput").disabled = false;
+      subInput.disabled = false;
       document.getElementById("depthInput").disabled = false;
       document.getElementById("topKInput").disabled = false;
       document.getElementById("generateBtn").disabled = false;
     }
 
-    function populateDatalist() {
-      const list = document.getElementById("subList");
-      // Only show first 1000 for performance
-      const subs = Array.from(allSubreddits).slice(0, 1000); 
-      subs.forEach(sub => {
-        const option = document.createElement("option");
-        option.value = sub;
-        list.appendChild(option);
+    function setupSearch() {
+      subInput.addEventListener('input', function() {
+        const searchTerm = this.value.toLowerCase();
+        suggestionsDiv.innerHTML = '';
+        
+        if (searchTerm.length < 2) {
+          suggestionsDiv.style.display = 'none';
+          return;
+        }
+        
+        const matches = Array.from(allSubreddits)
+          .filter(sub => sub.toLowerCase().includes(searchTerm))
+          .slice(0, 20); // Limit to top 20 matches
+        
+        if (matches.length > 0) {
+          matches.forEach(sub => {
+            const div = document.createElement('div');
+            div.className = 'suggestion-item';
+            div.textContent = sub;
+            div.addEventListener('click', function() {
+              subInput.value = sub;
+              suggestionsDiv.style.display = 'none';
+            });
+            suggestionsDiv.appendChild(div);
+          });
+          suggestionsDiv.style.display = 'block';
+        } else {
+          suggestionsDiv.style.display = 'none';
+        }
+      });
+      
+      // Hide suggestions when clicking elsewhere
+      document.addEventListener('click', function(e) {
+        if (e.target !== subInput) {
+          suggestionsDiv.style.display = 'none';
+        }
+      });
+      
+      // Prevent form submission
+      subInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+        }
       });
     }
 
@@ -125,18 +342,30 @@
         return;
       }
 
-      const start = document.getElementById("subInput").value.trim();
+      const start = subInput.value.trim();
       const maxDepth = parseInt(document.getElementById("depthInput").value) || 1;
       const topK = parseInt(document.getElementById("topKInput").value) || 10;
+
+      if (!start) {
+        alert("Please enter a subreddit name");
+        return;
+      }
 
       if (!adjList[start]) {
         alert(`Subreddit "${start}" not found. Try another one.`);
         return;
       }
 
+      startNode = start;
       let visited = new Set([start]);
       let queue = [{ node: start, depth: 0 }];
-      let elements = [{ data: { id: start, label: start } }];
+      let elements = [{ 
+        data: { 
+          id: start, 
+          label: start,
+          isCentral: true 
+        } 
+      }];
       let addedEdges = new Set();
 
       while (queue.length > 0) {
@@ -168,7 +397,13 @@
           if (!visited.has(target)) {
             visited.add(target);
             queue.push({ node: target, depth: depth + 1 });
-            elements.push({ data: { id: target, label: target } });
+            elements.push({ 
+              data: { 
+                id: target, 
+                label: target,
+                isCentral: false
+              } 
+            });
           }
         }
       }
@@ -190,7 +425,8 @@
       const maxDeg = Math.max(...degrees);
       const minDeg = Math.min(...degrees);
 
-      function getColor(deg) {
+      function getColor(deg, isCentral) {
+        if (isCentral) return '#e84393'; // Pink for central node
         const ratio = (deg - minDeg) / (maxDeg - minDeg || 1);
         const r = Math.round(255 * ratio);
         const b = Math.round(255 * (1 - ratio));
@@ -200,7 +436,10 @@
       elements.forEach(el => {
         if (el.data.label) {
           const deg = degreeMap[el.data.id] || 0;
-          el.data.bgColor = getColor(deg);
+          el.data.bgColor = getColor(deg, el.data.isCentral);
+          if (el.data.isCentral) {
+            el.data.size = 30; // Larger size for central node
+          }
         }
       });
 
@@ -211,31 +450,52 @@
           name: 'cose',
           idealEdgeLength: 100,
           nodeOverlap: 20,
-          refresh: 20
+          refresh: 20,
+          padding: 50,
+          randomize: false,
+          componentSpacing: 100,
+          nodeRepulsion: 400000,
+          edgeElasticity: 100,
+          nestingFactor: 5,
+          gravity: 80,
+          numIter: 1000,
+          initialTemp: 200,
+          coolingFactor: 0.95,
+          minTemp: 1.0
         },
         style: [
           {
             selector: 'node',
             style: {
               label: 'data(label)',
-              shape: 'rectangle',
-              'font-size': '7px',
-              'width': 'label',
-              'height': 'label',
-              'padding': '4px',
-              'color': '#fff',
               'text-valign': 'center',
               'text-halign': 'center',
               'text-wrap': 'wrap',
-              'background-color': 'data(bgColor)'
+              'text-max-width': '100px',
+              'font-size': '10px',
+              'background-color': 'data(bgColor)',
+              'width': 'mapData(size, 10, 30, 10, 30)',
+              'height': 'mapData(size, 10, 30, 10, 30)',
+              'color': '#fff',
+              'text-outline-color': '#555',
+              'text-outline-width': '2px'
             }
           },
           {
             selector: 'edge',
             style: {
-              width: 1,
-              'line-color': '#aaa',
-              'curve-style': 'bezier'
+              'width': 'mapData(weight, 0, 1, 0.5, 3)',
+              'line-color': '#999',
+              'curve-style': 'bezier',
+              'opacity': 0.8
+            }
+          },
+          {
+            selector: 'node[isCentral = "true"]',
+            style: {
+              'shape': 'star',
+              'width': 40,
+              'height': 40
             }
           }
         ]
