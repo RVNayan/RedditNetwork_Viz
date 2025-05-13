@@ -30,7 +30,7 @@
     }
     
     #sidebar-toggle {
-      background:  #6c5ce7;
+      background: none;
       border: none;
       font-size: 20px;
       cursor: pointer;
@@ -87,7 +87,6 @@
     }
     
     input {
-      /* Disable browser autocomplete */
       autocomplete: "off";
       autocorrect: "off";
       autocapitalize: "off";
@@ -144,6 +143,7 @@
       width: calc(100% - 24px);
       border-radius: 0 0 4px 4px;
       box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      display: none;
     }
     
     .suggestion-item {
@@ -157,7 +157,6 @@
     
     .collapsed .sidebar-text {
       display: none;
-      background-color: #666;
     }
     
     .collapsed .input-group {
@@ -189,7 +188,6 @@
         <label for="subInput" class="sidebar-text">Search Subreddit</label>
         <input type="text" id="subInput" placeholder="Start typing a subreddit name" disabled 
                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
-        <div id="subList"></div>
         <div id="suggestions" class="suggestions"></div>
       </div>
       
@@ -216,6 +214,9 @@
     let allSubreddits = new Set();
     let isDataLoaded = false;
     let startNode = null;
+    const CHUNK_SIZE = 1024 * 1024 * 2; // 2MB chunks
+    let fileSize = 0;
+    let processedBytes = 0;
 
     // UI Elements
     const loadingDiv = document.getElementById('loading');
@@ -234,53 +235,81 @@
     // Show loading UI
     loadingDiv.style.display = 'block';
 
-    // Stream CSV from GitHub LFS
-    function streamCSV() {
-      const csvUrl = "https://media.githubusercontent.com/media/RVNayan/RedditNetwork_Viz/refs/heads/main/data/JCSimilarity_Jaccard_cleaned.csv";
-      let processedRows = 0;
-      const estimatedTotalRows = 30000000;
-
-      Papa.parse(csvUrl, {
-        download: true,
-        header: true,
-        chunk: function(results, parser) {
-          for (const row of results.data) {
-            if (!row.Source || !row.Target || !row.Weight) continue;
-
-            const src = row.Source.trim();
-            const tgt = row.Target.trim();
-            const weight = parseFloat(row.Weight);
-
-            if (!adjList[src]) adjList[src] = [];
-            if (!adjList[tgt]) adjList[tgt] = [];
-
-            adjList[src].push({ node: tgt, weight });
-            adjList[tgt].push({ node: src, weight });
-
-            allSubreddits.add(src);
-            allSubreddits.add(tgt);
-            processedRows++;
-          }
-
-          // Update progress
-          const progress = Math.min(100, Math.round((processedRows / estimatedTotalRows) * 100));
-          progressBar.style.width = `${progress}%`;
-          progressText.textContent = `${progress}%`;
-        },
-        complete: function() {
-          loadingDiv.style.display = 'none';
-          isDataLoaded = true;
-          enableUI();
-          console.log("Dataset loaded with", allSubreddits.size, "subreddits");
+    // Stream CSV from Hugging Face
+    async function streamCSV() {
+      const csvUrl = "https://huggingface.co/datasets/RVen/RedditJ2/resolve/main/JCSimilarity_Jaccard_cleaned.csv";
+      
+      try {
+        // First get file size
+        const headResponse = await fetch(csvUrl, { method: 'HEAD' });
+        fileSize = parseInt(headResponse.headers.get('Content-Length'));
+        
+        // Process file in chunks
+        while (processedBytes < fileSize) {
+          const endByte = Math.min(processedBytes + CHUNK_SIZE, fileSize - 1);
+          const rangeHeader = `bytes=${processedBytes}-${endByte}`;
           
-          // Setup search functionality
-          setupSearch();
-        },
-        error: function(err) {
-          loadingDiv.innerHTML = `<p style="color:red">Error loading data: ${err.message}</p>`;
-          console.error("CSV loading error:", err);
+          const response = await fetch(csvUrl, {
+            headers: { Range: rangeHeader }
+          });
+          
+          const chunkText = await response.text();
+          await processChunk(chunkText);
+          
+          processedBytes = endByte + 1;
+          updateProgress();
         }
+        
+        loadingDiv.style.display = 'none';
+        isDataLoaded = true;
+        enableUI();
+        
+      } catch (err) {
+        loadingDiv.innerHTML = `<p style="color:red">Error loading data: ${err.message}</p>`;
+        console.error("CSV loading error:", err);
+      }
+    }
+
+    function processChunk(chunkText) {
+      return new Promise((resolve) => {
+        Papa.parse(chunkText, {
+          header: true,
+          chunk: (results) => {
+            for (const row of results.data) {
+              if (!row.Source || !row.Target || !row.Weight) continue;
+
+              const src = row.Source.trim();
+              const tgt = row.Target.trim();
+              const weight = parseFloat(row.Weight);
+
+              if (!adjList[src]) adjList[src] = [];
+              if (!adjList[tgt]) adjList[tgt] = [];
+
+              adjList[src].push({ node: tgt, weight });
+              adjList[tgt].push({ node: src, weight });
+
+              allSubreddits.add(src);
+              allSubreddits.add(tgt);
+            }
+          },
+          complete: resolve,
+          error: (err) => {
+            console.warn("Chunk error:", err);
+            resolve();
+          }
+        });
       });
+    }
+
+    function updateProgress() {
+      const progress = Math.min(100, Math.round((processedBytes / fileSize) * 100));
+      progressBar.style.width = `${progress}%`;
+      progressText.textContent = `${progress}%`;
+      
+      // Yield to UI thread periodically
+      if (progress % 5 === 0) {
+        setTimeout(() => {}, 0);
+      }
     }
 
     function enableUI() {
@@ -302,7 +331,7 @@
         
         const matches = Array.from(allSubreddits)
           .filter(sub => sub.toLowerCase().includes(searchTerm))
-          .slice(0, 20); // Limit to top 20 matches
+          .slice(0, 20);
         
         if (matches.length > 0) {
           matches.forEach(sub => {
@@ -438,7 +467,7 @@
           const deg = degreeMap[el.data.id] || 0;
           el.data.bgColor = getColor(deg, el.data.isCentral);
           if (el.data.isCentral) {
-            el.data.size = 30; // Larger size for central node
+            el.data.size = 30;
           }
         }
       });
@@ -448,14 +477,23 @@
         elements: elements,
         layout: { 
           name: 'cose',
-          idealEdgeLength: 100,
+          idealEdgeLength: function(edge) {
+            // Stronger weights = shorter edges (150px - 50px range)
+            return 150 - (edge.data('weight') * 100);
+          },
           nodeOverlap: 20,
           refresh: 20,
           padding: 50,
           randomize: false,
           componentSpacing: 100,
-          nodeRepulsion: 400000,
-          edgeElasticity: 100,
+          nodeRepulsion: function(node) {
+            // Less repulsion for central node
+            return node.data('isCentral') ? 100000 : 400000;
+          },
+          edgeElasticity: function(edge) {
+            // More elasticity for stronger edges
+            return edge.data('weight') * 100;
+          },
           nestingFactor: 5,
           gravity: 80,
           numIter: 1000,
@@ -502,8 +540,9 @@
       });
     }
 
-    // Start loading the data
+    // Initialize
     streamCSV();
+    setupSearch();
   </script>
 </body>
 </html>
