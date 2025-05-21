@@ -1,548 +1,150 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Subreddit Network Graph</title>
-  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-  <script src="https://unpkg.com/cytoscape@3.21.1/dist/cytoscape.min.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RedditJ3 Graph Visualizer</title>
   <style>
     body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      margin: 0;
-      padding: 0;
-      color: #333;
-      display: flex;
-      height: 100vh;
-      overflow: hidden;
+      font-family: Arial, sans-serif;
+      margin: 20px;
     }
-    
-    #sidebar {
-      width: 300px;
-      background: #f8f9fa;
-      border-right: 1px solid #e0e0e0;
-      height: 100%;
-      overflow-y: auto;
-      transition: all 0.3s;
-      box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+    #status {
+      margin-top: 10px;
+      font-weight: bold;
     }
-    
-    #sidebar.collapsed {
-      width: 50px;
-    }
-    
-    #sidebar-toggle {
-      background-color: 2c3e50;
-      border: none;
-      font-size: 20px;
-      cursor: pointer;
+    button, input {
       padding: 10px;
+      font-size: 16px;
+      margin-right: 10px;
+    }
+    #mynetwork {
       width: 100%;
-      text-align: left;
-      border-bottom: 1px solid #e0e0e0;
-    }
-    
-    #sidebar-content {
-      padding: 20px;
-    }
-    
-    #main-content {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-    }
-    
-    #cy {
-      flex: 1;
-      width: 100%;
-      border: none;
-    }
-    
-    h3 {
-      color: #2c3e50;
-      margin-bottom: 20px;
-    }
-    
-    .controls {
-      margin-bottom: 20px;
-    }
-    
-    .input-group {
-      margin-bottom: 15px;
-    }
-    
-    label {
-      display: block;
-      margin-bottom: 5px;
-      font-weight: 500;
-    }
-    
-    input, button {
-      padding: 8px 12px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      font-size: 14px;
-      width: 100%;
-      box-sizing: border-box;
-      background: white;
-    }
-    
-    input {
-      autocomplete: "off";
-      autocorrect: "off";
-      autocapitalize: "off";
-      spellcheck: "false";
-    }
-    
-    button {
-      background-color: #6c5ce7;
-      color: white;
-      border: none;
-      cursor: pointer;
-      transition: background-color 0.2s;
-      margin-top: 10px;
-    }
-    
-    button:hover {
-      background-color: #5649c0;
-    }
-    
-    button:disabled {
-      background-color: #b2b2b2;
-      cursor: not-allowed;
-    }
-    
-    #loading {
-      padding: 15px;
-      background: #f1f8fe;
-      border-radius: 8px;
-      margin-bottom: 20px;
-    }
-    
-    .progress-container {
-      width: 100%;
-      background: #e0e0e0;
-      border-radius: 4px;
-      margin-top: 10px;
-    }
-    
-    .progress-bar {
-      height: 8px;
-      background: linear-gradient(90deg, #6c5ce7, #a29bfe);
-      width: 0%;
-      border-radius: 4px;
-      transition: width 0.3s;
-    }
-    
-    .suggestions {
-      position: absolute;
-      background: white;
-      border: 1px solid #ddd;
-      max-height: 200px;
-      overflow-y: auto;
-      z-index: 100;
-      width: calc(100% - 24px);
-      border-radius: 0 0 4px 4px;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-      display: none;
-    }
-    
-    .suggestion-item {
-      padding: 8px 12px;
-      cursor: pointer;
-    }
-    
-    .suggestion-item:hover {
-      background: #f5f5f5;
-    }
-    
-    .collapsed .sidebar-text {
-      display: none;
-    }
-    
-    .collapsed .input-group {
-      display: none;
+      height: 600px;
+      border: 1px solid lightgray;
+      margin-top: 20px;
     }
   </style>
 </head>
 <body>
 
-  <div id="sidebar">
-    <button id="sidebar-toggle">
-      <span class="sidebar-text">☰ Menu</span>
-      <span style="display: none;">☰</span>
-    </button>
-    <div id="sidebar-content">
-      <h3 class="sidebar-text">Subreddit Network Explorer</h3>
-      
-      <div id="loading">
-        <div class="sidebar-text">Loading dataset... <span id="progress-text">0%</span></div>
-        <div class="progress-container">
-          <div class="progress-bar" id="progress-bar"></div>
-        </div>
-        <p class="sidebar-text" style="margin-top: 10px; color: #666; font-size: 14px;">
-          Processing large dataset - this may take a minute
-        </p>
-      </div>
-      
-      <div class="input-group">
-        <label for="subInput" class="sidebar-text">Search Subreddit</label>
-        <input type="text" id="subInput" placeholder="Start typing a subreddit name" disabled 
-               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
-        <div id="suggestions" class="suggestions"></div>
-      </div>
-      
-      <div class="input-group">
-        <label for="depthInput" class="sidebar-text">Exploration Depth</label>
-        <input id="depthInput" type="number" min="1" value="1" disabled />
-      </div>
-      
-      <div class="input-group">
-        <label for="topKInput" class="sidebar-text">Max Connections per Node</label>
-        <input id="topKInput" type="number" min="1" value="10" disabled />
-      </div>
-      
-      <button onclick="initGraph()" disabled id="generateBtn" class="sidebar-text">Generate Network</button>
-    </div>
-  </div>
+<h1>RedditJ3 Graph Visualizer</h1>
+<label for="name">Start Node:</label>
+<input id="name" placeholder="e.g. r/technology" />
+<label for="k">Top K:</label>
+<input id="k" type="number" value="3" min="1" />
+<label for="n">Levels:</label>
+<input id="n" type="number" value="2" min="1" />
+<button id="loadBtn">Load & Visualize</button>
+<div id="status">Idle</div>
+<div id="mynetwork"></div>
 
-  <div id="main-content">
-    <div id="cy"></div>
-  </div>
+<script type="module">
+  import { Network } from 'https://cdn.jsdelivr.net/npm/vis-network/standalone/esm/vis-network.min.js';
 
-  <script>
-    let adjList = {};
-    let allSubreddits = new Set();
-    let isDataLoaded = false;
-    let startNode = null;
-    const CHUNK_SIZE = 1024 * 1024 * 2; // 2MB chunks
-    let fileSize = 0;
-    let processedBytes = 0;
+  const loadBtn = document.getElementById('loadBtn');
+  const status = document.getElementById('status');
 
-    // UI Elements
-    const loadingDiv = document.getElementById('loading');
-    const progressBar = document.getElementById('progress-bar');
-    const progressText = document.getElementById('progress-text');
-    const subInput = document.getElementById('subInput');
-    const suggestionsDiv = document.getElementById('suggestions');
-    const sidebar = document.getElementById('sidebar');
-    const sidebarToggle = document.getElementById('sidebar-toggle');
+  const PARQUET_URL = 'https://huggingface.co/datasets/RVen/RedditJ3/resolve/main/filtered_output.parquet';
 
-    // Toggle sidebar
-    sidebarToggle.addEventListener('click', function() {
-      sidebar.classList.toggle('collapsed');
+  let edgeData = [];
+
+  loadBtn.addEventListener('click', async () => {
+    const root = document.getElementById('name').value.trim();
+    const k = parseInt(document.getElementById('k').value);
+    const n = parseInt(document.getElementById('n').value);
+
+    if (!root || isNaN(k) || isNaN(n)) {
+      alert('Please fill all fields correctly.');
+      return;
+    }
+
+    loadBtn.disabled = true;
+    status.textContent = 'Loading parquet and building graph...';
+
+    try {
+      const { asyncBufferFromUrl, parquetReadObjects } = await import('https://cdn.jsdelivr.net/npm/hyparquet/src/hyparquet.min.js');
+      const file = await asyncBufferFromUrl({ url: PARQUET_URL });
+      const data = await parquetReadObjects({
+        file,
+        columns: ['Source', 'Target', 'Weight']
+      });
+
+      edgeData = data;
+      status.textContent = `Loaded ${edgeData.length} edges. Building graph...`;
+      const graph = buildGraph(edgeData);
+      const subgraph = expandGraph(graph, root, k, n);
+      drawGraph(subgraph);
+      status.textContent = 'Graph loaded.';
+
+    } catch (err) {
+      console.error(err);
+      status.textContent = 'Error: ' + err.message;
+    } finally {
+      loadBtn.disabled = false;
+    }
+  });
+
+  function buildGraph(data) {
+    const map = new Map();
+    for (const { Source, Target, Weight } of data) {
+      if (!map.has(Source)) map.set(Source, []);
+      map.get(Source).push({ target: Target, weight: Weight });
+    }
+    return map;
+  }
+
+  function expandGraph(graph, start, k, depth) {
+    const visited = new Set();
+    const nodes = new Map();
+    const edges = new Set();
+
+    function dfs(node, level) {
+      if (level > depth || visited.has(node)) return;
+      visited.add(node);
+      nodes.set(node, true);
+      const neighbors = (graph.get(node) || [])
+        .sort((a, b) => b.weight - a.weight)
+        .slice(0, k);
+
+      for (const { target, weight } of neighbors) {
+        nodes.set(target, true);
+        edges.add(`${node}|${target}|${weight}`);
+        dfs(target, level + 1);
+      }
+    }
+
+    dfs(start, 0);
+
+    return {
+      nodes: Array.from(nodes.keys()).map(id => ({ id, label: id })),
+      edges: Array.from(edges).map(e => {
+        const [from, to, weight] = e.split('|');
+        return { from, to, label: false, width: Math.log10(parseFloat(weight) + 1) };
+      })
+    };
+  }
+
+  function drawGraph({ nodes, edges }) {
+    const container = document.getElementById('mynetwork');
+    const network = new Network(container, { nodes, edges }, {
+      nodes: {
+        shape: 'dot',
+        size: 10
+      },
+      edges: {
+        arrows: 'to',
+        smooth: true
+      },
+      layout: {
+        improvedLayout: true
+      },
+      physics: {
+        stabilization: false
+      }
     });
+  }
+</script>
 
-    // Show loading UI
-    loadingDiv.style.display = 'block';
-
-    // Stream CSV from Hugging Face
-    async function streamCSV() {
-      const csvUrl = "https://huggingface.co/datasets/RVen/RedditJ2/resolve/main/JCSimilarity_Jaccard_cleaned.csv";
-      
-      try {
-        // First get file size
-        const headResponse = await fetch(csvUrl, { method: 'HEAD' });
-        fileSize = parseInt(headResponse.headers.get('Content-Length'));
-        
-        // Process file in chunks
-        while (processedBytes < fileSize) {
-          const endByte = Math.min(processedBytes + CHUNK_SIZE, fileSize - 1);
-          const rangeHeader = `bytes=${processedBytes}-${endByte}`;
-          
-          const response = await fetch(csvUrl, {
-            headers: { Range: rangeHeader }
-          });
-          
-          const chunkText = await response.text();
-          await processChunk(chunkText);
-          
-          processedBytes = endByte + 1;
-          updateProgress();
-        }
-        
-        loadingDiv.style.display = 'none';
-        isDataLoaded = true;
-        enableUI();
-        
-      } catch (err) {
-        loadingDiv.innerHTML = `<p style="color:red">Error loading data: ${err.message}</p>`;
-        console.error("CSV loading error:", err);
-      }
-    }
-
-    function processChunk(chunkText) {
-      return new Promise((resolve) => {
-        Papa.parse(chunkText, {
-          header: true,
-          chunk: (results) => {
-            for (const row of results.data) {
-              if (!row.Source || !row.Target || !row.Weight) continue;
-
-              const src = row.Source.trim();
-              const tgt = row.Target.trim();
-              const weight = parseFloat(row.Weight);
-
-              if (!adjList[src]) adjList[src] = [];
-              if (!adjList[tgt]) adjList[tgt] = [];
-
-              adjList[src].push({ node: tgt, weight });
-              adjList[tgt].push({ node: src, weight });
-
-              allSubreddits.add(src);
-              allSubreddits.add(tgt);
-            }
-          },
-          complete: resolve,
-          error: (err) => {
-            console.warn("Chunk error:", err);
-            resolve();
-          }
-        });
-      });
-    }
-
-    function updateProgress() {
-      const progress = Math.min(100, Math.round((processedBytes / fileSize) * 100));
-      progressBar.style.width = `${progress}%`;
-      progressText.textContent = `${progress}%`;
-      
-      // Yield to UI thread periodically
-      if (progress % 5 === 0) {
-        setTimeout(() => {}, 0);
-      }
-    }
-
-    function enableUI() {
-      subInput.disabled = false;
-      document.getElementById("depthInput").disabled = false;
-      document.getElementById("topKInput").disabled = false;
-      document.getElementById("generateBtn").disabled = false;
-    }
-
-    function setupSearch() {
-      subInput.addEventListener('input', function() {
-        const searchTerm = this.value.toLowerCase();
-        suggestionsDiv.innerHTML = '';
-        
-        if (searchTerm.length < 2) {
-          suggestionsDiv.style.display = 'none';
-          return;
-        }
-        
-        const matches = Array.from(allSubreddits)
-          .filter(sub => sub.toLowerCase().includes(searchTerm))
-          .slice(0, 20);
-        
-        if (matches.length > 0) {
-          matches.forEach(sub => {
-            const div = document.createElement('div');
-            div.className = 'suggestion-item';
-            div.textContent = sub;
-            div.addEventListener('click', function() {
-              subInput.value = sub;
-              suggestionsDiv.style.display = 'none';
-            });
-            suggestionsDiv.appendChild(div);
-          });
-          suggestionsDiv.style.display = 'block';
-        } else {
-          suggestionsDiv.style.display = 'none';
-        }
-      });
-      
-      // Hide suggestions when clicking elsewhere
-      document.addEventListener('click', function(e) {
-        if (e.target !== subInput) {
-          suggestionsDiv.style.display = 'none';
-        }
-      });
-      
-      // Prevent form submission
-      subInput.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-        }
-      });
-    }
-
-    function initGraph() {
-      if (!isDataLoaded) {
-        alert("Data is still loading. Please wait...");
-        return;
-      }
-
-      const start = subInput.value.trim();
-      const maxDepth = parseInt(document.getElementById("depthInput").value) || 1;
-      const topK = parseInt(document.getElementById("topKInput").value) || 10;
-
-      if (!start) {
-        alert("Please enter a subreddit name");
-        return;
-      }
-
-      if (!adjList[start]) {
-        alert(`Subreddit "${start}" not found. Try another one.`);
-        return;
-      }
-
-      startNode = start;
-      let visited = new Set([start]);
-      let queue = [{ node: start, depth: 0 }];
-      let elements = [{ 
-        data: { 
-          id: start, 
-          label: start,
-          isCentral: true 
-        } 
-      }];
-      let addedEdges = new Set();
-
-      while (queue.length > 0) {
-        const { node, depth } = queue.shift();
-        if (depth >= maxDepth) continue;
-
-        const neighbors = (adjList[node] || [])
-          .sort((a, b) => b.weight - a.weight)
-          .slice(0, topK);
-
-        for (const neighbor of neighbors) {
-          const target = neighbor.node;
-          const weight = neighbor.weight;
-
-          const edgeId = `${node}__${target}`;
-          const reverseEdgeId = `${target}__${node}`;
-          if (!addedEdges.has(edgeId) && !addedEdges.has(reverseEdgeId)) {
-            elements.push({
-              data: {
-                id: edgeId,
-                source: node,
-                target: target,
-                weight: weight
-              }
-            });
-            addedEdges.add(edgeId);
-          }
-
-          if (!visited.has(target)) {
-            visited.add(target);
-            queue.push({ node: target, depth: depth + 1 });
-            elements.push({ 
-              data: { 
-                id: target, 
-                label: target,
-                isCentral: false
-              } 
-            });
-          }
-        }
-      }
-
-      drawGraph(elements);
-    }
-
-    function drawGraph(elements) {
-      const degreeMap = {};
-
-      elements.forEach(el => {
-        if (el.data.source && el.data.target) {
-          degreeMap[el.data.source] = (degreeMap[el.data.source] || 0) + 1;
-          degreeMap[el.data.target] = (degreeMap[el.data.target] || 0) + 1;
-        }
-      });
-
-      const degrees = Object.values(degreeMap);
-      const maxDeg = Math.max(...degrees);
-      const minDeg = Math.min(...degrees);
-
-      function getColor(deg, isCentral) {
-        if (isCentral) return '#e84393'; // Pink for central node
-        const ratio = (deg - minDeg) / (maxDeg - minDeg || 1);
-        const r = Math.round(255 * ratio);
-        const b = Math.round(255 * (1 - ratio));
-        return `rgb(${r}, 80, ${b})`;
-      }
-
-      elements.forEach(el => {
-        if (el.data.label) {
-          const deg = degreeMap[el.data.id] || 0;
-          el.data.bgColor = getColor(deg, el.data.isCentral);
-          if (el.data.isCentral) {
-            el.data.size = 30;
-          }
-        }
-      });
-
-      cytoscape({
-        container: document.getElementById("cy"),
-        elements: elements,
-        layout: { 
-          name: 'cose',
-          idealEdgeLength: function(edge) {
-            // Stronger weights = shorter edges (150px - 50px range)
-            return 150 - (edge.data('weight') * 100);
-          },
-          nodeOverlap: 20,
-          refresh: 20,
-          padding: 50,
-          randomize: false,
-          componentSpacing: 100,
-          nodeRepulsion: function(node) {
-            // Less repulsion for central node
-            return node.data('isCentral') ? 100000 : 400000;
-          },
-          edgeElasticity: function(edge) {
-            // More elasticity for stronger edges
-            return edge.data('weight') * 100;
-          },
-          nestingFactor: 5,
-          gravity: 80,
-          numIter: 1000,
-          initialTemp: 200,
-          coolingFactor: 0.95,
-          minTemp: 1.0
-        },
-        style: [
-          {
-            selector: 'node',
-            style: {
-              label: 'data(label)',
-              'text-valign': 'center',
-              'text-halign': 'center',
-              'text-wrap': 'wrap',
-              'text-max-width': '100px',
-              'font-size': '10px',
-              'background-color': 'data(bgColor)',
-              'width': 'mapData(size, 10, 30, 10, 30)',
-              'height': 'mapData(size, 10, 30, 10, 30)',
-              'color': '#fff',
-              'text-outline-color': '#555',
-              'text-outline-width': '2px'
-            }
-          },
-          {
-            selector: 'edge',
-            style: {
-              'width': 'mapData(weight, 0, 1, 0.5, 3)',
-              'line-color': '#999',
-              'curve-style': 'bezier',
-              'opacity': 0.8
-            }
-          },
-          {
-            selector: 'node[isCentral = "true"]',
-            style: {
-              'shape': 'star',
-              'width': 40,
-              'height': 40
-            }
-          }
-        ]
-      });
-    }
-
-    // Initialize
-    streamCSV();
-    setupSearch();
-  </script>
 </body>
 </html>

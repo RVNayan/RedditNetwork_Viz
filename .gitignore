@@ -1,0 +1,3 @@
+data/filtered_output.parquet
+data/JCSimilarity_Jaccard_cleaned.csv
+data/csvconvertorter.py
