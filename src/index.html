@@ -97,10 +97,10 @@
     <input id="name" placeholder="e.g. technology, memes" list="subreddits" autocomplete="off" autocorrect="off" />
     <datalist id="subreddits"></datalist>
 
-    <label for="k">Enter the number of connections for the above Subreddit</label>
+    <label for="k">How many top connections for the above Subreddit</label>
     <input id="k" type="number" value="3" min="1" />
 
-    <label for="n">Enter How deep you want to Build the Network</label>
+    <label for="n">How deep do you want to build the Network?</label>
     <input id="n" type="number" value="2" min="1" />
 
     <button id="loadBtn">🚀 Load & Visualize</button>
@@ -109,10 +109,15 @@
 
 <div id="tips" style="display: none;">
   <strong>💡 Tip:</strong> Did you know you can explore the Reddit similarity network up to <em>n</em> levels deep? Try increasing K or N to see how the network grows!
+  
 </div>
 
 <div id="status">Downloading dataset in background...</div>
 <div id="mynetwork"></div>
+
+<div style="margin-top: 10px;">
+  <progress id="progress" value="0" max="100" style="width: 100%; height: 20px; display: none;"></progress>
+</div>
 
 <script type="module">
   import { Network } from 'https://cdn.jsdelivr.net/npm/vis-network/standalone/esm/vis-network.min.js';
@@ -126,23 +131,62 @@
   const datalist = document.getElementById('subreddits');
   const status = document.getElementById('status');
   const tips = document.getElementById('tips');
+  const progressBar = document.getElementById('progress');
   const loadBtn = document.getElementById('loadBtn');
 
+  const tipMessages = [
+  "💡 Tip: 'Number of Connections (K)' means the top K most similar subreddits will be shown from each node. This keeps the graph focused on strong relationships.",
+  "💡 Tip: 'Levels (N)' determines how many layers deep the network expands from the starting subreddit. Higher N = bigger network.",
+  "💡 Tip: Each edge in the graph has a 'Weight' — higher weights mean stronger subreddit similarity (based on user overlap).",
+  "💡 Tip: Starting from a niche subreddit? Try a low 'K' to avoid clutter. For popular subs, a higher 'K' gives better structure.",
+  "💡 Tip: The graph uses a filtered dataset with only high-weight edges, ensuring quality over quantity.",
+  "💡 Tip: You can use this graph to discover hidden communities connected by user behavior — try subreddits like 'buildapc' or 'personalfinance'.",
+  "💡 Tip: Lighter edges = weaker relationships. Heavier edges = stronger similarity. This helps visualize subreddit clusters.",
+  "💡 Tip: This dataset is derived from co-commenting patterns on Reddit — if two subreddits share many users, they are connected.",
+  "💡 Tip: Curious about fringe communities? Explore beyond Level 2 to see emerging topic clusters form organically.",
+  "💡 Tip: Thicker Edges Show strong User Overlap between the two subreddits"
+];
+
+  function showRandomTip() {
+  const randomTip = tipMessages[Math.floor(Math.random() * tipMessages.length)];
+  tips.innerHTML = `<strong>${randomTip}</strong>`;
+  tips.style.display = 'block';
+}
+
+  // --- Collapsible toggle ---
   document.querySelector('.collapsible').addEventListener('click', function () {
     this.classList.toggle('active');
     const content = this.nextElementSibling;
     content.style.display = content.style.display === 'block' ? 'none' : 'block';
   });
 
-  // Load data in background immediately
+  // --- Load dataset with progress ---
   (async () => {
     try {
-      const { asyncBufferFromUrl, parquetReadObjects } = await import('https://cdn.jsdelivr.net/npm/hyparquet/src/hyparquet.min.js');
-      const file = await asyncBufferFromUrl({ url: PARQUET_URL });
+      progressBar.style.display = 'block';
+      const response = await fetch(PARQUET_URL);
+      const contentLength = +response.headers.get('Content-Length');
+      const reader = response.body.getReader();
+      let received = 0;
+      let chunks = [];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.length;
+        progressBar.value = Math.floor((received / contentLength) * 100);
+      }
+
+      const blob = new Blob(chunks);
+      const arrayBuffer = await blob.arrayBuffer();
+
+      const { parquetReadObjects } = await import('https://cdn.jsdelivr.net/npm/hyparquet/src/hyparquet.min.js');
       const data = await parquetReadObjects({
-        file,
+        file: arrayBuffer,
         columns: ['Source', 'Target', 'Weight']
       });
+
       edgeData = data;
       dataReady = true;
 
@@ -157,6 +201,7 @@
       }
 
       status.textContent = 'Data downloaded and ready.';
+      progressBar.style.display = 'none';
     } catch (err) {
       status.textContent = 'Error loading data: ' + err.message;
       console.error(err);
@@ -175,7 +220,7 @@
 
     if (!dataReady) {
       status.textContent = 'Still downloading... Here’s a tip while you wait!';
-      tips.style.display = 'block';
+      showRandomTip();
       return;
     }
 
@@ -184,9 +229,9 @@
 
     const graph = buildGraph(edgeData);
     const subgraph = expandGraph(graph, root, k, n);
-    drawGraph(subgraph);
+    drawGraph(subgraph, root);
 
-    status.textContent = 'Graph loaded! Click on Load & Visualize to explore more.';
+    status.textContent = '✅ Graph loaded! Click on Load & Visualize to explore more.';
   });
 
   function buildGraph(data) {
@@ -206,13 +251,13 @@
     function dfs(node, level) {
       if (level > depth || visited.has(node)) return;
       visited.add(node);
-      nodes.set(node, true);
+      nodes.set(node, level);
       const neighbors = (graph.get(node) || [])
         .sort((a, b) => b.weight - a.weight)
         .slice(0, k);
 
       for (const { target, weight } of neighbors) {
-        nodes.set(target, true);
+        nodes.set(target, level + 1);
         edges.add(`${node}|${target}|${weight}`);
         dfs(target, level + 1);
       }
@@ -221,37 +266,49 @@
     dfs(start, 0);
 
     return {
-      nodes: Array.from(nodes.keys()).map(id => ({ id, label: id })),
+      nodes: Array.from(nodes.entries()).map(([id, level]) => ({
+        id,
+        label: id,
+        level
+      })),
       edges: Array.from(edges).map(e => {
         const [from, to, weight] = e.split('|');
         return {
           from,
           to,
-          width: Math.log10(parseFloat(weight) + 1),
+          width: Math.log(parseFloat(weight) * 100 + 1),
           color: { color: 'black' }
         };
       })
     };
   }
 
-  function drawGraph({ nodes, edges }) {
+  function drawGraph({ nodes, edges }, root) {
     const container = document.getElementById('mynetwork');
-    const network = new Network(container, { nodes, edges }, {
+    const colorScale = ['#e91e63', '#ff9800', '#03a9f4', '#8bc34a', '#9c27b0', '#009688'];
+
+    const coloredNodes = nodes.map(node => ({
+      ...node,
+      color: {
+        background: node.id === root ? '#e91e63' : colorScale[node.level % colorScale.length],
+        border: '#000'
+      }
+    }));
+
+    const network = new Network(container, { nodes: coloredNodes, edges }, {
       nodes: {
         shape: 'dot',
-        size: 10,
-        color: { background: '#1976d2', border: '#0d47a1' },
+        size: 12,
         font: { color: '#000' }
       },
       edges: {
-        smooth: true,
+        smooth: false,
         color: 'black'
       },
       layout: { improvedLayout: true },
-      physics: { stabilization: false }
+      physics: { stabilization: false, enabaled: false}
     });
   }
 </script>
-
 </body>
 </html>
