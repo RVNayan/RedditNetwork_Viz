@@ -2,66 +2,140 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>RedditJ3 Graph Visualizer</title>
+  <title>Reddit Network V0.1</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body {
-      font-family: Arial, sans-serif;
-      margin: 20px;
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #f4f6f8;
     }
-    #status {
-      margin-top: 10px;
-      font-weight: bold;
+
+    h1 {
+      margin-top: 0;
     }
-    button, input {
-      padding: 10px;
+
+    .card {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+
+    .collapsible {
+      background-color: #1976d2;
+      color: white;
+      cursor: pointer;
+      padding: 15px;
+      border: none;
+      width: 100%;
+      text-align: left;
       font-size: 16px;
-      margin-right: 10px;
+      border-radius: 8px;
+      margin-bottom: 10px;
     }
+
+    .content {
+      padding: 0 15px;
+      display: none;
+      overflow: hidden;
+    }
+
+    label, input, select {
+      display: block;
+      margin: 10px 0;
+    }
+
+    input {
+      padding: 8px;
+      font-size: 16px;
+      width: 100%;
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
     #mynetwork {
       width: 100%;
       height: 600px;
       border: 1px solid lightgray;
-      margin-top: 20px;
+      border-radius: 10px;
+    }
+
+    #status {
+      margin-top: 10px;
+      font-style: italic;
+      color: #333;
+    }
+
+    #tips {
+      background: #fff9c4;
+      padding: 15px;
+      border-left: 4px solid #ffeb3b;
+      border-radius: 8px;
+      margin: 20px 0;
     }
   </style>
 </head>
 <body>
 
-<h1>RedditJ3 Graph Visualizer</h1>
-<label for="name">Start Node:</label>
-<input id="name" placeholder="e.g. r/technology" />
-<label for="k">Top K:</label>
-<input id="k" type="number" value="3" min="1" />
-<label for="n">Levels:</label>
-<input id="n" type="number" value="2" min="1" />
-<button id="loadBtn">Load & Visualize</button>
-<div id="status">Idle</div>
+<h1>Reddit Network</h1>
+
+<div class="card">
+  <button class="collapsible">View Options</button>
+  <div class="content">
+    <label for="name">Enter Subreddit name</label>
+    <input id="name" placeholder="e.g. technology, memes" list="subreddits" autocomplete="off" autocorrect="off" />
+    <datalist id="subreddits"></datalist>
+
+    <label for="k">Enter the number of connections for the above Subreddit</label>
+    <input id="k" type="number" value="3" min="1" />
+
+    <label for="n">Enter How deep you want to Build the Network</label>
+    <input id="n" type="number" value="2" min="1" />
+
+    <button id="loadBtn">🚀 Load & Visualize</button>
+  </div>
+</div>
+
+<div id="tips" style="display: none;">
+  <strong>💡 Tip:</strong> Did you know you can explore the Reddit similarity network up to <em>n</em> levels deep? Try increasing K or N to see how the network grows!
+</div>
+
+<div id="status">Downloading dataset in background...</div>
 <div id="mynetwork"></div>
 
 <script type="module">
   import { Network } from 'https://cdn.jsdelivr.net/npm/vis-network/standalone/esm/vis-network.min.js';
 
-  const loadBtn = document.getElementById('loadBtn');
-  const status = document.getElementById('status');
-
   const PARQUET_URL = 'https://huggingface.co/datasets/RVen/RedditJ3/resolve/main/filtered_output.parquet';
-
   let edgeData = [];
+  let subredditSet = new Set();
+  let dataReady = false;
 
-  loadBtn.addEventListener('click', async () => {
-    const root = document.getElementById('name').value.trim();
-    const k = parseInt(document.getElementById('k').value);
-    const n = parseInt(document.getElementById('n').value);
+  const nameInput = document.getElementById('name');
+  const datalist = document.getElementById('subreddits');
+  const status = document.getElementById('status');
+  const tips = document.getElementById('tips');
+  const loadBtn = document.getElementById('loadBtn');
 
-    if (!root || isNaN(k) || isNaN(n)) {
-      alert('Please fill all fields correctly.');
-      return;
-    }
+  document.querySelector('.collapsible').addEventListener('click', function () {
+    this.classList.toggle('active');
+    const content = this.nextElementSibling;
+    content.style.display = content.style.display === 'block' ? 'none' : 'block';
+  });
 
-    loadBtn.disabled = true;
-    status.textContent = 'Loading parquet and building graph...';
-
+  // Load data in background immediately
+  (async () => {
     try {
       const { asyncBufferFromUrl, parquetReadObjects } = await import('https://cdn.jsdelivr.net/npm/hyparquet/src/hyparquet.min.js');
       const file = await asyncBufferFromUrl({ url: PARQUET_URL });
@@ -69,20 +143,50 @@
         file,
         columns: ['Source', 'Target', 'Weight']
       });
-
       edgeData = data;
-      status.textContent = `Loaded ${edgeData.length} edges. Building graph...`;
-      const graph = buildGraph(edgeData);
-      const subgraph = expandGraph(graph, root, k, n);
-      drawGraph(subgraph);
-      status.textContent = 'Graph loaded.';
+      dataReady = true;
 
+      data.forEach(({ Source, Target }) => {
+        subredditSet.add(Source);
+        subredditSet.add(Target);
+      });
+      for (const name of subredditSet) {
+        const option = document.createElement('option');
+        option.value = name;
+        datalist.appendChild(option);
+      }
+
+      status.textContent = 'Data downloaded and ready.';
     } catch (err) {
+      status.textContent = 'Error loading data: ' + err.message;
       console.error(err);
-      status.textContent = 'Error: ' + err.message;
-    } finally {
-      loadBtn.disabled = false;
     }
+  })();
+
+  loadBtn.addEventListener('click', () => {
+    const root = nameInput.value.trim();
+    const k = parseInt(document.getElementById('k').value);
+    const n = parseInt(document.getElementById('n').value);
+
+    if (!root || isNaN(k) || isNaN(n)) {
+      alert('Please enter all fields correctly.');
+      return;
+    }
+
+    if (!dataReady) {
+      status.textContent = 'Still downloading... Here’s a tip while you wait!';
+      tips.style.display = 'block';
+      return;
+    }
+
+    tips.style.display = 'none';
+    status.textContent = 'Building graph...';
+
+    const graph = buildGraph(edgeData);
+    const subgraph = expandGraph(graph, root, k, n);
+    drawGraph(subgraph);
+
+    status.textContent = 'Graph loaded! Click on Load & Visualize to explore more.';
   });
 
   function buildGraph(data) {
@@ -120,7 +224,12 @@
       nodes: Array.from(nodes.keys()).map(id => ({ id, label: id })),
       edges: Array.from(edges).map(e => {
         const [from, to, weight] = e.split('|');
-        return { from, to, label: false, width: Math.log10(parseFloat(weight) + 1) };
+        return {
+          from,
+          to,
+          width: Math.log10(parseFloat(weight) + 1),
+          color: { color: 'black' }
+        };
       })
     };
   }
@@ -130,18 +239,16 @@
     const network = new Network(container, { nodes, edges }, {
       nodes: {
         shape: 'dot',
-        size: 10
+        size: 10,
+        color: { background: '#1976d2', border: '#0d47a1' },
+        font: { color: '#000' }
       },
       edges: {
-        arrows: 'to',
-        smooth: true
+        smooth: true,
+        color: 'black'
       },
-      layout: {
-        improvedLayout: true
-      },
-      physics: {
-        stabilization: false
-      }
+      layout: { improvedLayout: true },
+      physics: { stabilization: false }
     });
   }
 </script>
