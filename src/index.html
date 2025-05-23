@@ -84,6 +84,26 @@
       border-radius: 8px;
       margin: 20px 0;
     }
+    progress {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+progress::-webkit-progress-bar {
+  background-color: #eee;
+  border-radius: 10px;
+  height: 20px;
+}
+
+progress::-webkit-progress-value {
+  background-color: #1cbd2f; /* Change this to your desired color */
+  border-radius: 10px;
+}
+
+progress::-moz-progress-bar {
+  background-color: #1cbd2f; /* For Firefox */
+  border-radius: 10px;
+}
   </style>
 </head>
 <body>
@@ -118,7 +138,7 @@
 <div style="margin-top: 10px;">
   <progress id="progress" value="0" max="100" style="width: 100%; height: 20px; display: none;"></progress>
 </div>
-
+<link rel="icon" href="../img/Webcon.png" type="image/png">
 <script type="module">
   import { Network } from 'https://cdn.jsdelivr.net/npm/vis-network/standalone/esm/vis-network.min.js';
 
@@ -212,7 +232,7 @@
     const root = nameInput.value.trim();
     const k = parseInt(document.getElementById('k').value);
     const n = parseInt(document.getElementById('n').value);
-
+    n = n - 1;
     if (!root || isNaN(k) || isNaN(n)) {
       alert('Please enter all fields correctly.');
       return;
