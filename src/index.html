@@ -4,11 +4,12 @@
   <meta charset="UTF-8" />
   <title>Reddit Network V0.1</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+
   <style>
     body {
       font-family: 'Segoe UI', sans-serif;
       margin: 0;
-      padding: 20px;
+      padding: 10px;
       background: #f4f6f8;
     }
 
@@ -48,10 +49,12 @@
       margin: 10px 0;
     }
 
-    input {
+    input, select {
       padding: 8px;
       font-size: 16px;
       width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
     }
 
     button {
@@ -84,61 +87,84 @@
       border-radius: 8px;
       margin: 20px 0;
     }
+
     progress {
-  appearance: none;
-  -webkit-appearance: none;
-}
+      appearance: none;
+      -webkit-appearance: none;
+      width: 100%;
+      height: 20px;
+      display: block;
+    }
 
-progress::-webkit-progress-bar {
-  background-color: #eee;
-  border-radius: 10px;
-  height: 20px;
-}
+    progress::-webkit-progress-bar {
+      background-color: #eee;
+      border-radius: 10px;
+    }
 
-progress::-webkit-progress-value {
-  background-color: #1cbd2f; /* Change this to your desired color */
-  border-radius: 10px;
-}
+    progress::-webkit-progress-value {
+      background-color: #1cbd2f;
+      border-radius: 10px;
+    }
 
-progress::-moz-progress-bar {
-  background-color: #1cbd2f; /* For Firefox */
-  border-radius: 10px;
-}
+    progress::-moz-progress-bar {
+      background-color: #1cbd2f;
+      border-radius: 10px;
+    }
+
+    .input-top {
+      margin-bottom: 20px;
+    }
+
+    @media (max-width: 768px) {
+      body {
+        padding: 10px;
+      }
+
+      button {
+        width: 100%;
+      }
+
+      input {
+        font-size: 14px;
+      }
+
+      .collapsible {
+        font-size: 14px;
+      }
+    }
+    
   </style>
-
-<link rel="apple-touch-icon" sizes="180x180" href="../img/apple-touch-icon.png">
-<link rel="icon" type="image/png" sizes="32x32" href="../img/favicon-32x32.png">
-<link rel="icon" type="image/png" sizes="16x16" href="../img/favicon-16x16.png">
-<link rel="manifest" href="../img/site.webmanifest">
 </head>
+
 <body>
 
-<h1>Reddit Network</h1>
+  <!-- 🔼 Top progress bar -->
+  <progress id="progress" value="0" max="100" style="display: none;"></progress>
 
-<div class="card">
-  <button class="collapsible">View Options</button>
-  <div class="content">
-    <label for="name">Enter Subreddit name</label>
+  <h1>Reddit Network</h1>
+
+  <!-- 🔍 Input outside collapsible -->
+  <div class="card input-top">
+    <label for="name"><strong>Enter Subreddit Name</strong></label>
     <input id="name" placeholder="e.g. technology, memes" list="subreddits" autocomplete="off" autocorrect="off" />
     <datalist id="subreddits"></datalist>
-
-    <label for="k">How many top connections for the above Subreddit</label>
-    <input id="k" type="number" value="3" min="1" />
-
-    <label for="n">How deep do you want to build the Network?</label>
-    <input id="n" type="number" value="2" min="1" />
-
-    <button id="loadBtn">🚀 Load & Visualize</button>
   </div>
-</div>
 
-<div id="tips" style="display: none;">
-  <strong>💡 Tip:</strong> Did you know you can explore the Reddit similarity network up to <em>n</em> levels deep? Try increasing K or N to see how the network grows!
-  
-</div>
+  <!-- ⚙️ Collapsible view options -->
+  <div class="card">
+    <button class="collapsible">View More Options</button>
+    <div class="content">
+      <label for="k">How many top connections for the above Subreddit</label>
+      <input id="k" type="number" value="3" min="1" />
 
-<div id="status">Downloading dataset in background...</div>
-<div id="mynetwork"></div>
+      <label for="n">How deep do you want to build the Network?</label>
+      <input id="n" type="number" value="2" min="1" />
+    </div>
+  </div>
+  <button id="loadBtn">Generate Graph</button>
+  <div id="tips" style="display: none;"></div>
+  <div id="status">Downloading dataset in background...</div>
+  <div id="mynetwork"></div>
 
 <div style="margin-top: 10px;">
   <progress id="progress" value="0" max="100" style="width: 100%; height: 20px; display: none;"></progress>
