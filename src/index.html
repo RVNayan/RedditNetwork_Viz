@@ -332,7 +332,7 @@
       const blob = new Blob(chunks);
       const arrayBuffer = await blob.arrayBuffer();
 
-      const { parquetReadObjects } = await import('https://cdn.jsdelivr.net/npm/hyparquet/src/hyparquet.min.js');
+      const { parquetReadObjects } = await import('https://cdn.jsdelivr.net/npm/hyparquet@1.14.0/src/hyparquet.min.js'); // later version (>1.14.0) are returning BufferFile Error. Do not chnage this
       const data = await parquetReadObjects({
         file: arrayBuffer,
         columns: ['Source', 'Target', 'Weight']
