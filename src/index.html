@@ -227,6 +227,40 @@
         padding: 12px 16px;
       }
     }
+
+    .search-container {
+  position: relative;
+  width: 100%;
+}
+
+.suggestions-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 300px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+  z-index: 1000;
+  display: none;
+}
+
+.suggestion-item {
+  padding: 10px 15px;
+  cursor: pointer;
+}
+
+.suggestion-item:hover {
+  background-color: #f0f0f0;
+}
+
+.highlight {
+  font-weight: bold;
+  color: #1976d2;
+}
   </style>
 </head>
 <body>
@@ -240,9 +274,12 @@
 <div class="card" role="region" aria-label="View options" style="display: flex; flex-direction: column; gap: 20px; padding: 25px;">
 
     <label for="name" style="margin-bottom: 8px;"><strong>Enter Subreddit Name</strong></label>
-  <input id="name" placeholder="e.g. technology, memes" list="subreddits" autocomplete="off" autocorrect="off" style="padding: 10px; font-size: 16px;" />
-  <datalist id="subreddits"></datalist>
-
+  <!-- <input id="name" placeholder="e.g. technology, memes" list="subreddits" autocomplete="off" autocorrect="off" style="padding: 10px; font-size: 16px;" />
+  <datalist id="subreddits"></datalist> -->
+<div class="search-container">
+  <input id="name" placeholder="e.g. technology, memes" autocomplete="off" autocorrect="off" />
+  <div id="suggestions" class="suggestions-dropdown"></div>
+</div>
 
     <button class="collapsible" aria-expanded="false" aria-controls="viewOptions">View More Options</button>
     <div id="viewOptions" class="content" aria-hidden="true">
@@ -341,15 +378,110 @@
       edgeData = data;
       dataReady = true;
 
-      data.forEach(({ Source, Target }) => {
-        subredditSet.add(Source);
-        subredditSet.add(Target);
-      });
-      for (const name of subredditSet) {
-        const option = document.createElement('option');
-        option.value = name;
-        datalist.appendChild(option);
-      }
+      // Add this near the top with other DOM elements
+const suggestionsDropdown = document.getElementById('suggestions');
+const nameInput = document.getElementById('name');
+
+// Replace the datalist population code with this:
+function populateSuggestions() {
+  data.forEach(({ Source, Target }) => {
+    subredditSet.add(Source);
+    subredditSet.add(Target);
+  });
+}
+
+// Add these new functions for suggestion handling
+function showSuggestions(searchTerm) {
+  suggestionsDropdown.innerHTML = '';
+  
+  if (!searchTerm) {
+    suggestionsDropdown.style.display = 'none';
+    return;
+  }
+  
+  // Remove spaces for search
+  const cleanSearch = searchTerm.replace(/\s+/g, '').toLowerCase();
+  const suggestions = Array.from(subredditSet)
+    .filter(name => name.replace(/\s+/g, '').toLowerCase().includes(cleanSearch))
+    .sort((a, b) => {
+      // Prioritize exact matches at the beginning
+      if (a.toLowerCase().startsWith(cleanSearch)) return -1;
+      if (b.toLowerCase().startsWith(cleanSearch)) return 1;
+      return 0;
+    })
+    .slice(0, 20); // Limit to 20 suggestions
+  
+  if (suggestions.length === 0) {
+    suggestionsDropdown.style.display = 'none';
+    return;
+  }
+  
+  suggestions.forEach(name => {
+    const div = document.createElement('div');
+    div.className = 'suggestion-item';
+    div.innerHTML = highlightMatch(name, searchTerm);
+    div.addEventListener('click', () => {
+      nameInput.value = name;
+      suggestionsDropdown.style.display = 'none';
+    });
+    suggestionsDropdown.appendChild(div);
+  });
+  
+  suggestionsDropdown.style.display = 'block';
+}
+
+function highlightMatch(name, searchTerm) {
+  const cleanSearch = searchTerm.replace(/\s+/g, '').toLowerCase();
+  const cleanName = name.replace(/\s+/g, '').toLowerCase();
+  const startIndex = cleanName.indexOf(cleanSearch);
+  
+  if (startIndex === -1) return name;
+  
+  const endIndex = startIndex + cleanSearch.length;
+  const originalNameParts = name.split(/\s+/);
+  let currentLength = 0;
+  let result = '';
+  
+  for (const part of originalNameParts) {
+    const partLower = part.toLowerCase();
+    const partClean = partLower.replace(/\s+/g, '');
+    
+    if (currentLength <= startIndex && currentLength + partClean.length > startIndex) {
+      const localStart = Math.max(0, startIndex - currentLength);
+      const localEnd = Math.min(partClean.length, endIndex - currentLength);
+      
+      const before = part.substring(0, localStart);
+      const match = part.substring(localStart, localEnd);
+      const after = part.substring(localEnd);
+      
+      result += `${before}<span class="highlight">${match}</span>${after} `;
+    } else {
+      result += `${part} `;
+    }
+    
+    currentLength += partClean.length;
+  }
+  
+  return result.trim();
+}
+
+// Add these event listeners
+nameInput.addEventListener('input', () => {
+  showSuggestions(nameInput.value);
+});
+
+nameInput.addEventListener('focus', () => {
+  showSuggestions(nameInput.value);
+});
+
+document.addEventListener('click', (e) => {
+  if (!nameInput.contains(e.target) && !suggestionsDropdown.contains(e.target)) {
+    suggestionsDropdown.style.display = 'none';
+  }
+});
+
+// Call populateSuggestions instead of the old datalist code
+populateSuggestions();
 
       status.textContent = 'Data downloaded and ready. Click on Generate Graph';
       progressBar.style.display = 'none';
