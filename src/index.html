@@ -571,75 +571,63 @@ populateSuggestions();
 
 function drawGraph({ nodes, edges }, root) {
   const container = document.getElementById('mynetwork');
+
   const colorScale = [
-  '#f06292', // vivid pink
-  '#ffb74d', // bright orange
-  '#4fc3f7', // vibrant sky blue
-  '#9ccc65', // bright green
-  '#ba68c8', // vibrant purple
-  '#4db6ac'  // fresh teal
-];
-  
+    '#f06292', '#ffb74d', '#4fc3f7',
+    '#9ccc65', '#ba68c8', '#4db6ac'
+  ];
 
-
-
-  // First, calculate the degree for each node
   const degreeMap = new Map();
-  
-  // Initialize degree counts
   nodes.forEach(node => degreeMap.set(node.id, 0));
-  
-  // Count connections (both in and out edges)
   edges.forEach(edge => {
     degreeMap.set(edge.from, (degreeMap.get(edge.from) || 0) + 1);
     degreeMap.set(edge.to, (degreeMap.get(edge.to) || 0) + 1);
   });
 
-  // Find min and max degrees for scaling
   const degrees = Array.from(degreeMap.values());
   const minDegree = Math.min(...degrees);
   const maxDegree = Math.max(...degrees);
-  
-  // Scale factors - adjust these to get the desired size range
-  const minSize = 5;
-  const maxSize = 10;
-  const minFont = 10;
-  const maxFont = 20;
+
+  const minSize = 10;
+  const maxSize = 50;
+  const minFont = 8;
+  const maxFont = 28;
 
   const coloredNodes = nodes.map(node => {
     const degree = degreeMap.get(node.id) || 0;
-    
-    // Scale size and font based on degree
-    const sizeScale = (degree - minDegree) / (maxDegree - minDegree);
+    const sizeScale = (maxDegree === minDegree)
+      ? 0.5
+      : (degree - minDegree) / (maxDegree - minDegree);
+
     const nodeSize = minSize + (maxSize - minSize) * sizeScale;
     const fontSize = Math.min(
       minFont + (maxFont - minFont) * sizeScale,
-      nodeSize * 0.6  // Ensure font isn't bigger than 60% of node size
-    );    
-    return {
-      ...node,
-      size: nodeSize,
-      font: { 
-        size: fontSize,
-        color: '#000',
-        face: 'verdana',
-        strokeWidth: 0.25,
-        strokeColor: '#000',
-        vadjust: 0,
-        maxVisible: Number.MAX_VALUE // show text even when zoomed out
-      },
-      shape: 'circle',
-      color: {
-        background: node.id === root ? '#e91e63' : colorScale[node.level % colorScale.length],
-        border: '#000'
-      },
-      borderWidth: 2
-    };
-  });
+      nodeSize * 0.6
+    );
+
+ return {
+    ...node,
+    shape: 'dot', // <-- KEY CHANGE
+    size: nodeSize, // controls circle size (not affected by text)
+    label: node.label, // optional label
+    font: {
+      size: fontSize,
+      color: '#000',
+      face: 'verdana',
+      strokeWidth: 0,
+      maxVisible: Number.MAX_VALUE
+    },
+    color: {
+      background: node.id === root ? '#e91e63' : colorScale[node.level % colorScale.length],
+      border: '#000'
+    },
+    borderWidth: 2
+  };
+});
 
   const network = new Network(container, { nodes: coloredNodes, edges }, {
     nodes: {
-      shape: 'circle',
+      shape: 'dot',
       font: { 
         size: 14, // default if not set per node
         color: '#000'
@@ -655,7 +643,7 @@ function drawGraph({ nodes, edges }, root) {
       enabled: true,
       solver: 'repulsion',
       repulsion: {
-        nodeDistance: maxSize * 5,    // min distance between nodes
+        nodeDistance: maxSize * 2.5,    // min distance between nodes
         centralGravity: 1,
         springLength: 100,
         springConstant: 0.01,
