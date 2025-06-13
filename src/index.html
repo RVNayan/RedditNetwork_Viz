@@ -179,8 +179,8 @@
     /* Network container */
     #mynetwork {
       width: 100%;
-      max-width: 800px;
-      height: 600px;
+      max-width: 1400px;
+      height: 900px;
       background: white;
       border-radius: 16px;
       box-shadow: 0 10px 30px rgba(0,0,0,0.05);
@@ -327,16 +327,11 @@
 
   const tipMessages = [
   "💡 Tip: 'Number of Connections (K)' means the top K most similar subreddits will be shown from each node. This keeps the graph focused on strong relationships.",
-  "💡 Tip: 'Levels (N)' determines how many layers deep the network expands from the starting subreddit. Higher N = bigger network.",
-  "💡 Tip: Each edge in the graph has a 'Weight' — higher weights mean stronger subreddit similarity (based on user overlap).",
-  "💡 Tip: Starting from a niche subreddit? Try a low 'K' to avoid clutter. For popular subs, a higher 'K' gives better structure.",
-  "💡 Tip: The graph uses a filtered dataset with only high-weight edges, ensuring quality over quantity.",
+  "'Levels (N)' determines how many layers deep the network expands from the starting subreddit. Higher N = bigger network.",
+  "💡 Tip: Hold and Drag the nodes to move the graph",
   "💡 Tip: You can use this graph to discover hidden communities connected by user behavior — try subreddits like 'buildapc' or 'personalfinance'.",
-  "💡 Tip: Lighter edges = weaker relationships. Heavier edges = stronger similarity. This helps visualize subreddit clusters.",
-  "💡 Tip: This dataset is derived from co-commenting patterns on Reddit — if two subreddits share many users, they are connected.",
-  "💡 Tip: Curious about fringe communities? Explore beyond Level 2 to see emerging topic clusters form organically.",
-  "💡 Tip: Thicker Edges Show strong User Overlap between the two subreddits"
-];
+  "This dataset is derived from posting patterns on Reddit — if two subreddits share many users, they are connected.",
+  "💡 Tip: Click on any nodes to highlight its neighbors."];
 
   function showRandomTip() {
   const randomTip = tipMessages[Math.floor(Math.random() * tipMessages.length)];
@@ -588,7 +583,7 @@ function drawGraph({ nodes, edges }, root) {
   const minDegree = Math.min(...degrees);
   const maxDegree = Math.max(...degrees);
 
-  const minSize = 10;
+  const minSize = 30;
   const maxSize = 50;
   const minFont = 8;
   const maxFont = 28;
@@ -607,7 +602,7 @@ function drawGraph({ nodes, edges }, root) {
 
  return {
     ...node,
-    shape: 'dot', // <-- KEY CHANGE
+    shape: 'circle', // <-- KEY CHANGE
     size: nodeSize, // controls circle size (not affected by text)
     label: node.label, // optional label
     font: {
@@ -649,8 +644,64 @@ function drawGraph({ nodes, edges }, root) {
         springConstant: 0.01,
         damping: 0.1
       }
-    }
+    },
+    interaction: {
+    tooltipDelay: 100,
+    hover: true
+  }
+
   });
+
+    // Build neighbor map
+  const neighborMap = new Map();
+  coloredNodes.forEach(n => neighborMap.set(n.id, new Set()));
+  edges.forEach(({ from, to }) => {
+    neighborMap.get(from).add(to);
+    neighborMap.get(to).add(from); // assuming undirected
+  });
+
+  // Store original node colors for reset
+  const originalNodeColors = {};
+  coloredNodes.forEach(node => {
+    originalNodeColors[node.id] = node.color;
+  });
+
+  network.on('click', function (params) {
+    const allNodeIds = coloredNodes.map(n => n.id);
+
+    if (params.nodes.length === 0) {
+      // Clicked on blank space → reset colors
+      const resetNodes = coloredNodes.map(n => ({
+        id: n.id,
+        color: originalNodeColors[n.id]
+      }));
+      network.body.data.nodes.update(resetNodes);
+      return;
+    }
+
+    const selectedId = params.nodes[0];
+    const neighbors = neighborMap.get(selectedId) || new Set();
+
+    const updateNodes = coloredNodes.map(node => {
+      if (node.id === selectedId || neighbors.has(node.id)) {
+        return {
+          id: node.id,
+          color: originalNodeColors[node.id]
+        };
+      } else {
+        return {
+          id: node.id,
+          color: {
+            background: '#808080',
+            border: '#000'
+          }
+        };
+      }
+    });
+
+    network.body.data.nodes.update(updateNodes);
+  });
+
 }
 </script>
 </body>
